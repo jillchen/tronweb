@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#000000">
+    <script src="../js/jquery.min.js"></script>
+    <script src="TronWeb.js"></script>
+    <title>React App</title>
+</head>
+<body>
+    <textarea cols="100" rows="20" id="area_log"></textarea>
+
+    <button onclick="GetGameRoundInfo()">游戏信息</button>
+
+    <button onclick="AskPrice()">当前单价</button>
+
+
+    <button onclick="BuyToken()">购买</button>
+    <script>
+
+        var contract = null;
+        var state = {
+            address: null,
+            balance: null,
+            contract: null,
+            tokenBalance: null,
+            decimals: 6,
+            price: 0
+        };
+        var artifact = {};
+        $(function () {
+            $.get("./SingleTokenGame.json", function (data) {
+
+                artifact = data;
+
+                waitForGlobal(function () {
+                    window.tronWeb.setDefaultBlock('latest');
+                    let tronWeb = window.tronWeb;
+
+                    state.address = tronWeb.defaultAddress.base58;
+                    let address = tronWeb.address.fromHex(artifact.networks['3'].address);
+                    WriteLog("当前钱包地址:" + address);
+
+
+                    tronWeb.trx.getBalance(address).then(Balance => WriteLog("当前用户额度:" + Balance));
+                    console.log(artifact.abi, artifact.networks['3'].address, address)
+                    contract = tronWeb.contract(artifact.abi, address);
+                    console.log(contract)
+                });
+            });
+
+        });
+
+        function WriteLog(msg) {
+            $("#area_log").append(msg + "\n");
+            $("#area_log").scrollTop($("#area_log")[0].scrollHeight);
+        }
+
+        function GetGameRoundInfo() {
+            let tronWeb = window.tronWeb;
+            state.address && contract.getCurrentRoundInfo().call().then(output => {
+                WriteLog("当前游戏信息:" + JSON.stringify(output));
+
+                if (tronWeb.isAddress(output.last_buy_user_address)) {
+                    WriteLog("最后购买用户:" + tronWeb.address.fromHex(output.last_buy_user_address));
+                } else {
+                    WriteLog("还没有人购买");
+                }
+
+            });
+
+            state.address && contract.getDecimals().call().then(output => {
+                state.decimals = tronWeb.toDecimal(output);
+                WriteLog("货币精度:" + tronWeb.toDecimal(output));
+            });
+        }
+        function BuyToken() {
+            state.address && contract.buy_token("TJMHXwNsam6822iiNrLozpjt8DhWs14BAV").send({
+                feeLimit: 100000000,
+                callValue: state.price,
+                shouldPollResponse: true
+            }).then(output => {
+
+
+
+                WriteLog("购买响应:" + JSON.stringify(output));
+            });
+        }
+        function AskPrice() {
+            state.address && contract.askprice().call().then(output => {
+                state.price = tronWeb.toDecimal(output.price);
+                WriteLog("当前价格:" + (state.price / (Math.pow(10, state.decimals))) + "RTX");
+            });
+        }
+        var waitForGlobal = async (call_back) => {
+            // 1. check variable, 检查tronweb是否已经加载
+            if (window.tronWeb) {
+                let tronWeb = window.tronWeb;
+                //tronWeb.setHeader({ "TRON-PRO-API-KEY": 'your api key' });
+                // 2. check node connection，检查所需要的API是否都可以连通
+                const nodes = await tronWeb.isConnected();
+                const connected = !Object.entries(nodes).map(([name, connected]) => {
+                    if (!connected) {
+                        console.error(`Error: ${name} is not connected`);
+                    }
+                    return connected;
+                }).includes(false);
+                if (connected) {
+                    call_back()
+                } else {
+                    console.error(`Error: TRON node is not connected`);
+                    console.error('wait for tronLink');
+                    setTimeout(async () => {
+                        await waitForGlobal(call_back);
+                    }, 100);
+                }
+
+            } else {
+                // 如果检测到没有注入tronWeb对象，则等待100ms后重新检测
+                console.error('wait for tronLink');
+                setTimeout(async () => {
+                    await waitForGlobal(call_back);
+                }, 100);
+            }
+        };
+
+    </script>
+</body>
+</html>
